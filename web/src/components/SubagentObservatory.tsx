@@ -1,0 +1,83 @@
+import type { SessionSnapshot, SubagentNode } from "../types.js";
+
+interface Props { snapshot?: SessionSnapshot }
+
+const elapsed = (startedAt: number, endedAt?: number): string => {
+  const ms = (endedAt ?? Date.now()) - startedAt;
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  return `${Math.floor(s / 60)}m ${s % 60}s`;
+};
+
+export function SubagentObservatory({ snapshot }: Props) {
+  if (!snapshot) {
+    return <div><div className="panel-title headline">★ Subagent Observatory</div>
+      <p style={{ color: "var(--muted)", fontSize: 12 }}>Waiting for a session…</p>
+    </div>;
+  }
+
+  const running = snapshot.subagents.filter((s) => !s.endedAt).length;
+  return (
+    <div>
+      <div className="panel-title headline">
+        ★ Subagent Observatory
+        <span style={{ color: "var(--muted)", fontWeight: 400, marginLeft: 8 }}>
+          {snapshot.subagents.length} agents · {running} running
+        </span>
+      </div>
+
+      <div className="sub-tree" role="tree" aria-label="Subagent tree">
+        <Node
+          kind="main"
+          title="Main"
+          subtitle={`${snapshot.model ?? ""} · coordinator`}
+          status={`${snapshot.toolCalls} tool calls · started ${elapsed(snapshot.startedAt)} ago`}
+          isRoot
+        />
+        {snapshot.subagents.length > 0 && (
+          <div className="parallel-label">├─ {snapshot.subagents.length} parallel subagents</div>
+        )}
+        <div className="children">
+          {snapshot.subagents.map((s) => <SubagentRow key={s.agentId} node={s} />)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SubagentRow({ node }: { node: SubagentNode }) {
+  const running = !node.endedAt;
+  const cls = running ? "node running" : "node done";
+  return (
+    <div className={cls} role="treeitem" aria-label={node.agentType}>
+      <span className="glyph" aria-hidden="true">{running ? "🟢" : "✓"}</span>
+      <div className="body">
+        <div className="name">{node.agentType} <span className="kind">{node.model ?? ""}</span></div>
+        <div className="status">
+          {running ? `● running · ${elapsed(node.startedAt)}` : `✓ done · ${elapsed(node.startedAt, node.endedAt)}`}
+        </div>
+        {node.lastMessage && (
+          <div className="summary">{truncate(node.lastMessage, 240)}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Node({
+  kind, title, subtitle, status, isRoot,
+}: { kind: string; title: string; subtitle: string; status: string; isRoot?: boolean; }) {
+  return (
+    <div className={`node ${isRoot ? "root" : ""}`} role="treeitem" aria-label={title}>
+      <span className="glyph" aria-hidden="true">🤖</span>
+      <div className="body">
+        <div className="name">{title} <span className="kind">{subtitle}</span></div>
+        <div className="status">{status}</div>
+      </div>
+    </div>
+  );
+}
+
+function truncate(s: string, n: number): string {
+  return s.length > n ? s.slice(0, n) + "…" : s;
+}
