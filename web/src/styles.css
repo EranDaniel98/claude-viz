@@ -28,12 +28,15 @@ body { margin: 0; background: var(--bg); color: var(--fg); font-family: -apple-s
 /* Feed (Live Activity) */
 .feed { list-style: none; padding: 0; margin: 0; font-family: ui-monospace, monospace; font-size: 11px;
         line-height: 1.7; color: var(--muted); max-height: 420px; overflow: auto; }
-.feed .row { display: flex; gap: 8px; align-items: center; padding: 1px 4px; border-radius: 3px; }
+.feed .row { display: flex; gap: 8px; align-items: center; padding: 1px 4px; border-radius: 3px; min-width: 0; }
 .feed .row:hover { background: rgba(255,255,255,0.04); }
-.feed .ts { color: #475569; min-width: 60px; }
-.feed .tool { color: var(--fg); min-width: 110px; }
+.feed .row.start { opacity: 0.55; }          /* PreToolUse dimmer than PostToolUse so pairs are visually grouped */
+.feed .ts { color: #475569; min-width: 60px; flex: 0 0 auto; }
+.feed .tool { color: var(--fg); min-width: 110px; flex: 0 0 auto; }
+.feed .detail { color: var(--muted); flex: 1 1 auto; min-width: 0;
+                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .feed .row.err { color: var(--err); }
-.feed .tag { font-size: 9px; background: rgba(255,255,255,0.06); padding: 0 6px; border-radius: 8px; }
+.feed .tag { font-size: 9px; background: rgba(255,255,255,0.06); padding: 0 6px; border-radius: 8px; flex: 0 0 auto; }
 .feed .tag.err { background: rgba(239,68,68,0.15); color: var(--err); }
 .feed .tag.muted { color: var(--muted); }
 .empty p code { background: rgba(255,255,255,0.05); padding: 1px 5px; border-radius: 3px; }

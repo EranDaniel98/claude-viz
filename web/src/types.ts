@@ -24,9 +24,12 @@ export interface NormalizedEvent {
   cwd: string;
   kind: string;
   toolName?: string;
-  toolResponse?: { isError?: boolean };
+  toolInput?: unknown;
+  toolResponse?: { isError?: boolean; content?: unknown };
+  prompt?: string;
   agentId?: string;
   agentType?: string;
+  lastAssistantMessage?: string;
   redactions: number;
 }
 
