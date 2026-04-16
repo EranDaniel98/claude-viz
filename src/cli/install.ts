@@ -37,17 +37,40 @@ export async function install(opts: InstallOptions): Promise<InstallResult> {
   if (existsSync(settingsPath)) {
     settings = JSON.parse(await readFile(settingsPath, "utf8"));
   }
-  const hooks = (settings.hooks as Record<string, unknown>) ?? {};
+  const existingHooks = (settings.hooks ?? {}) as Record<string, unknown>;
   const cmd = hookDst;
 
+  // Claude Code hook schema per-event: an array of matcher groups, each
+  //   { "matcher": "<tool-pattern-or-empty>", "hooks": [{ "type": "command", "command": "<cmd>" }] }
+  // We register a single matcher group (empty matcher = match all tools)
+  // that runs our hook script. Pre-existing groups authored by other tools
+  // are preserved; a prior claude-viz group is replaced.
   const events = [
     "SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse",
     "SubagentStart", "SubagentStop", "Stop",
   ];
-  for (const e of events) {
-    hooks[e] = { command: cmd };
+  const ourGroup = {
+    matcher: "",
+    hooks: [{ type: "command", command: cmd }],
+  };
+  const isOurs = (g: unknown): boolean => {
+    if (!g || typeof g !== "object") return false;
+    const hooks = (g as { hooks?: unknown }).hooks;
+    if (!Array.isArray(hooks)) return false;
+    return hooks.some((h) =>
+      h && typeof h === "object" &&
+      typeof (h as { command?: unknown }).command === "string" &&
+      ((h as { command: string }).command).includes("claude-viz-hook"),
+    );
+  };
+
+  const nextHooks: Record<string, unknown> = { ...existingHooks };
+  for (const event of events) {
+    const prev = existingHooks[event];
+    const base = Array.isArray(prev) ? prev.filter((g) => !isOurs(g)) : [];
+    nextHooks[event] = [...base, ourGroup];
   }
-  settings.hooks = hooks;
+  settings.hooks = nextHooks;
   await writeFile(settingsPath, JSON.stringify(settings, null, 2));
 
   const eventsFile = join(vizHome, "events.jsonl");
