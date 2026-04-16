@@ -30,6 +30,9 @@ Thumbs.db
 .env.local
 .env.*.local
 
+# Claude Code per-developer settings (project-scoped shared settings.json is OK to commit)
+.claude/settings.local.json
+
 # Coverage / test
 coverage/
 .nyc_output/
