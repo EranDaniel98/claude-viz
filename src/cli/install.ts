@@ -17,15 +17,17 @@ export interface InstallResult {
 
 export async function install(opts: InstallOptions): Promise<InstallResult> {
   const pkgRoot = resolve(fileURLToPath(import.meta.url), "..", "..", "..");
-  const hookSrc = platform() === "win32"
-    ? join(pkgRoot, "scripts", "hooks", "claude-viz-hook.cmd")
-    : join(pkgRoot, "scripts", "hooks", "claude-viz-hook.sh");
+  // Claude Code hooks run under /usr/bin/bash on every platform (Git Bash on
+  // Windows), so always install the POSIX script. A .cmd variant exists for
+  // any caller who wires it up manually but the installer doesn't use it.
+  const hookSrc = join(pkgRoot, "scripts", "hooks", "claude-viz-hook.sh");
 
   const vizHome = join(homedir(), ".claude-viz");
   await mkdir(vizHome, { recursive: true });
-  const hookDst = join(vizHome, platform() === "win32" ? "claude-viz-hook.cmd" : "claude-viz-hook.sh");
+  const hookDst = join(vizHome, "claude-viz-hook.sh");
   await copyFile(hookSrc, hookDst);
-  if (platform() !== "win32") await chmod(hookDst, 0o755);
+  // chmod is a no-op on Windows filesystems; swallow any error.
+  try { await chmod(hookDst, 0o755); } catch { /* ignore */ }
 
   const settingsPath = opts.scope === "user"
     ? join(homedir(), ".claude", "settings.json")
@@ -38,7 +40,10 @@ export async function install(opts: InstallOptions): Promise<InstallResult> {
     settings = JSON.parse(await readFile(settingsPath, "utf8"));
   }
   const existingHooks = (settings.hooks ?? {}) as Record<string, unknown>;
-  const cmd = hookDst;
+  // Bash strips unrecognized `\<x>` escapes from double-quoted strings, which
+  // mangles Windows paths like `C:\Users\...`. Forward slashes are accepted
+  // by Node fs APIs, Git Bash, WSL, and Claude Code alike.
+  const cmd = hookDst.replace(/\\/g, "/");
 
   // Claude Code hook schema per-event: an array of matcher groups, each
   //   { "matcher": "<tool-pattern-or-empty>", "hooks": [{ "type": "command", "command": "<cmd>" }] }

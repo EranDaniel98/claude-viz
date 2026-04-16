@@ -66,11 +66,27 @@ describe("server e2e", () => {
     }
   });
 
-  it("rejects requests without the token", async () => {
+  it("rejects API requests without the token", async () => {
     const server = await startServer({ eventsFile: events });
     try {
       const res = await fetch(`${baseUrl(server)}/api/sessions`);
       expect(res.status).toBe(403);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("serves static assets without the token (so bundle references resolve)", async () => {
+    // Create a tiny webDir with an index.html the server can serve without auth.
+    const webDir = join(tmp, "webdist");
+    mkdirSync(webDir, { recursive: true });
+    writeFileSync(join(webDir, "index.html"), "<!doctype html><title>viz</title>");
+
+    const server = await startServer({ eventsFile: events, webDir });
+    try {
+      const res = await fetch(`${baseUrl(server)}/index.html`); // no ?k=
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain("<title>viz</title>");
     } finally {
       await server.close();
     }

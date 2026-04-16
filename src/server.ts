@@ -54,10 +54,16 @@ export async function startServer(opts: ServerOptions): Promise<ServerHandle> {
   }
 
   const httpServer = createServer(async (req, res) => {
-    if (!checkAuth(req, token)) return send(res, 403, "forbidden");
+    // Host/Origin is always required — defeats DNS rebinding regardless
+    // of path. URL token is only required for /api/* (sensitive session
+    // data). Static HTML/CSS/JS can load without the token because the
+    // browser won't append ?k= to relative asset URLs referenced from
+    // index.html. The bundle itself contains no session data.
     if (!checkLocalOrigin(req)) return send(res, 403, "forbidden origin");
 
     const url = new URL(req.url ?? "/", "http://localhost");
+    const requiresAuth = url.pathname.startsWith("/api/");
+    if (requiresAuth && !checkAuth(req, token)) return send(res, 403, "forbidden");
 
     if (url.pathname === "/api/sessions") {
       const ids = store.allSessionIds();
