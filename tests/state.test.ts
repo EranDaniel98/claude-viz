@@ -77,4 +77,35 @@ describe("SessionStateStore", () => {
     const snap = store.snapshot("s1")!;
     expect(snap.redactions).toBeGreaterThan(0);
   });
+
+  it("attributes tool calls on a subagent's own session to its parent's SubagentNode", () => {
+    const store = new SessionStateStore();
+    store.ingest(base({ hook_event_name: "SessionStart", session_id: "parent" }), 1, 1000);
+    store.ingest(base({
+      hook_event_name: "SubagentStart",
+      session_id: "child",
+      parent_session_id: "parent",
+      agent_id: "a1",
+      agent_type: "Explore",
+    }), 2, 1100);
+    store.ingest(base({
+      hook_event_name: "PreToolUse",
+      session_id: "child",
+      tool_name: "Bash",
+      tool_use_id: "t1",
+    }), 3, 1200);
+    const snapDuring = store.snapshot("parent")!;
+    expect(snapDuring.subagents[0].currentTool).toBe("Bash");
+    expect(snapDuring.subagents[0].toolCallCount).toBe(0);
+
+    store.ingest(base({
+      hook_event_name: "PostToolUse",
+      session_id: "child",
+      tool_name: "Bash",
+      tool_use_id: "t1",
+    }), 4, 1300);
+    const snapAfter = store.snapshot("parent")!;
+    expect(snapAfter.subagents[0].currentTool).toBeUndefined();
+    expect(snapAfter.subagents[0].toolCallCount).toBe(1);
+  });
 });

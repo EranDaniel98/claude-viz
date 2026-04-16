@@ -48,15 +48,31 @@ export function SubagentObservatory({ snapshot }: Props) {
 function SubagentRow({ node }: { node: SubagentNode }) {
   const running = !node.endedAt;
   const cls = running ? "node running" : "node done";
+  const meta = [
+    `${node.toolCallCount} tool use${node.toolCallCount === 1 ? "" : "s"}`,
+    // Tokens come from the session transcript file, not hooks — Phase 2.
+    "— tokens",
+  ].join(" · ");
+
   return (
     <div className={cls} role="treeitem" aria-label={node.agentType}>
       <span className="glyph" aria-hidden="true">{running ? "🟢" : "✓"}</span>
       <div className="body">
-        <div className="name">{node.agentType} <span className="kind">{node.model ?? ""}</span></div>
-        <div className="status">
-          {running ? `● running · ${elapsed(node.startedAt)}` : `✓ done · ${elapsed(node.startedAt, node.endedAt)}`}
+        <div className="name">
+          {node.agentType}
+          <span className="kind">{node.model ?? ""}</span>
         </div>
-        {node.lastMessage && (
+        <div className="status">
+          {running
+            ? `● running · ${elapsed(node.startedAt)} · ${meta}`
+            : `✓ done · ${elapsed(node.startedAt, node.endedAt)} · ${meta}`}
+        </div>
+        {running && node.currentTool && (
+          <div className="current-tool" aria-label={`currently running ${node.currentTool}`}>
+            <span className="arrow">↳</span> {node.currentTool}
+          </div>
+        )}
+        {!running && node.lastMessage && (
           <div className="summary">{truncate(node.lastMessage, 240)}</div>
         )}
       </div>

@@ -56,6 +56,11 @@ body { margin: 0; background: var(--bg); color: var(--fg); font-family: -apple-s
                  border-left: 2px solid rgba(255,255,255,0.1); }
 .children { margin-left: 26px; border-left: 1px dashed rgba(255,255,255,0.1); padding-left: 14px; margin-top: 4px; }
 .parallel-label { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin: 8px 0 4px 26px; }
+.node .current-tool { margin-top: 4px; font-family: ui-monospace, monospace; font-size: 10px;
+                      color: var(--ok); background: rgba(16,185,129,0.08);
+                      padding: 3px 7px; border-radius: 3px;
+                      border-left: 2px solid var(--ok); }
+.node .current-tool .arrow { color: var(--muted); margin-right: 4px; }
 
 /* Scope card */
 .scope { margin-top: 10px; background: var(--panel); border: 1px solid var(--border);
