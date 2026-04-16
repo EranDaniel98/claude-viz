@@ -2,6 +2,7 @@
   "name": "claude-viz",
   "version": "0.1.0",
   "description": "Local web dashboard for Claude Code CLI — subagent observatory + session scope receipt",
+  "type": "module",
   "bin": { "claude-viz": "bin/claude-viz.js" },
   "main": "dist/server.js",
   "scripts": {
