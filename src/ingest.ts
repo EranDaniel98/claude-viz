@@ -54,11 +54,20 @@ export async function tailJsonl(filePath: string, onEvent: LineHandler): Promise
   const watcher: FSWatcher = chokidar.watch(filePath, {
     persistent: true,
     ignoreInitial: true,
+    // Native fs events on Windows are unreliable for append-only JSONL;
+    // polling is ~free on a single file and keeps behavior consistent.
+    usePolling: true,
+    interval: 100,
     awaitWriteFinish: { stabilityThreshold: 20, pollInterval: 10 },
   });
 
   watcher.on("add", () => readFrom(offset).catch(() => {}));
   watcher.on("change", () => readFrom(offset).catch(() => {}));
+
+  // Wait for chokidar to report initial scan complete. Without this, callers
+  // that append to the file immediately after tailJsonl() returns can write
+  // before the watcher is armed, and the change event gets missed.
+  await new Promise<void>((resolve) => watcher.once("ready", () => resolve()));
 
   return {
     async close() {
