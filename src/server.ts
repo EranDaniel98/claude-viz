@@ -9,6 +9,7 @@ import { SessionStateStore } from "./state.js";
 import type { RawHookEvent } from "./types.js";
 import { readAllUsages, contextTokens, contextLimitFor, detectBurn } from "./transcript.js";
 import { readReasoningByToolUseId } from "./transcriptReasoning.js";
+import { buildFileGraph } from "./fileGraph.js";
 
 export interface ServerOptions {
   eventsFile: string;
@@ -106,6 +107,14 @@ export async function startServer(opts: ServerOptions): Promise<ServerHandle> {
     if (url.pathname === "/api/sessions") {
       const ids = store.allSessionIds();
       return sendJson(res, { sessions: ids });
+    }
+    if (url.pathname.startsWith("/api/session/") && url.pathname.endsWith("/graph")) {
+      const id = decodeURIComponent(
+        url.pathname.slice("/api/session/".length, -("/graph".length)),
+      );
+      const snap = store.snapshot(id);
+      if (!snap) return send(res, 404, "unknown session");
+      return sendJson(res, buildFileGraph(snap.recentEvents));
     }
     if (url.pathname.startsWith("/api/session/") && url.pathname.endsWith("/reasoning")) {
       if (!opts.showReasoning) return send(res, 404, "reasoning disabled");
