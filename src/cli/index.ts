@@ -24,13 +24,16 @@ program.command("init")
 program.command("start")
   .description("Start the dashboard server")
   .option("--port <n>", "Port (default: OS-assigned)", (v) => parseInt(v, 10))
+  .option("--reasoning", "Surface assistant reasoning (reads transcript content)")
   .action(async (opts) => {
     const pkgRoot = resolve(fileURLToPath(import.meta.url), "..", "..", "..");
     const webDir = join(pkgRoot, "web", "dist");
     const eventsFile = process.env.CLAUDE_VIZ_EVENTS_FILE
       ?? join(homedir(), ".claude-viz", "events.jsonl");
+    const showReasoning = process.env.CLAUDE_VIZ_SHOW_REASONING === "1"
+                       || opts.reasoning === true;
 
-    const handle = await startServer({ eventsFile, port: opts.port, webDir });
+    const handle = await startServer({ eventsFile, port: opts.port, webDir, showReasoning });
     console.log(`\nClaude Viz running at:\n  ${handle.url}\n`);
     const shutdown = async () => { await handle.close(); process.exit(0); };
     process.on("SIGINT", shutdown);

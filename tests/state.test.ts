@@ -42,7 +42,7 @@ describe("SessionStateStore", () => {
       tool_input: { file_path: "/x/c.ts" },
     }), 3, 1200);
     const scope = store.snapshot("s1")!.scope;
-    expect(scope.edited["/x/a.ts"]).toEqual({ added: 2, removed: 1, reviewed: false });
+    expect(scope.edited["/x/a.ts"]).toMatchObject({ added: 2, removed: 1, reviewed: false });
     expect(scope.created).toContain("/x/b.ts");
     expect(scope.read).toContain("/x/c.ts");
   });

@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import type { SessionSnapshot } from "../types.js";
 import { LiveActivity } from "./LiveActivity.js";
+import type { ReasoningMap } from "../useReasoning.js";
 import { sessionStatus } from "../lib/sessionStatus.js";
 import { mergeFeedEvents } from "../lib/mergeFeed.js";
 
-interface Props { snapshot?: SessionSnapshot }
+interface Props { snapshot?: SessionSnapshot; reasoning?: ReasoningMap }
 
 /** Wraps LiveActivity in a collapsible drawer that auto-opens on STUCK / ERRORED. */
-export function FeedDrawer({ snapshot }: Props) {
+export function FeedDrawer({ snapshot, reasoning }: Props) {
   const [open, setOpen] = useState(false);
   const [autoReason, setAutoReason] = useState<string | null>(null);
   const prevAutoKindRef = useRef<string | null>(null);
@@ -44,7 +45,7 @@ export function FeedDrawer({ snapshot }: Props) {
       </button>
       {open && (
         <div className="drawer-body">
-          <LiveActivity snapshot={snapshot} />
+          <LiveActivity snapshot={snapshot} reasoning={reasoning} />
         </div>
       )}
     </section>

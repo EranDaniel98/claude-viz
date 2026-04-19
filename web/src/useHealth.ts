@@ -7,6 +7,7 @@ export interface Health {
   lastEventReceivedAt?: number;
   eventsSeenCount: number;
   sessionCount: number;
+  showReasoning?: boolean;
 }
 
 const POLL_MS = 5_000;

@@ -78,6 +78,11 @@ function SubagentRow({ node, hot }: { node: SubagentNode; hot: boolean }) {
             ? `● running · ${elapsed(node.startedAt)} · ${meta}`
             : `✓ done · ${elapsed(node.startedAt, node.endedAt)} · ${meta}`}
         </div>
+        {node.brief && (
+          <div className="brief" title={node.brief}>
+            <span className="brief-glyph">›</span> {truncate(node.brief, 200)}
+          </div>
+        )}
         {running && node.currentTool && (
           <div className="current-tool" aria-label={`currently running ${node.currentTool}`}>
             <span className="arrow">↳</span> {node.currentTool}

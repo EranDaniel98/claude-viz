@@ -8,12 +8,15 @@ import { tailJsonl, TailHandle } from "./ingest.js";
 import { SessionStateStore } from "./state.js";
 import type { RawHookEvent } from "./types.js";
 import { readAllUsages, contextTokens, contextLimitFor, detectBurn } from "./transcript.js";
+import { readReasoningByToolUseId } from "./transcriptReasoning.js";
 
 export interface ServerOptions {
   eventsFile: string;
   port?: number;                 // 0 = OS assigns
   webDir?: string;               // absolute path to built web/dist
   contextRefreshMs?: number;     // transcript re-read interval; 0 disables
+  showReasoning?: boolean;       // expose /api/session/:id/reasoning. Off by default
+                                 // because it materially changes privacy posture.
 }
 
 export interface ServerHandle {
@@ -97,11 +100,22 @@ export async function startServer(opts: ServerOptions): Promise<ServerHandle> {
         lastEventReceivedAt,
         eventsSeenCount: seq,
         sessionCount: store.allSessionIds().length,
+        showReasoning: !!opts.showReasoning,
       });
     }
     if (url.pathname === "/api/sessions") {
       const ids = store.allSessionIds();
       return sendJson(res, { sessions: ids });
+    }
+    if (url.pathname.startsWith("/api/session/") && url.pathname.endsWith("/reasoning")) {
+      if (!opts.showReasoning) return send(res, 404, "reasoning disabled");
+      const id = decodeURIComponent(
+        url.pathname.slice("/api/session/".length, -("/reasoning".length)),
+      );
+      const tp = store.transcriptPathFor(id);
+      if (!tp) return sendJson(res, {});
+      const map = await readReasoningByToolUseId(tp);
+      return sendJson(res, map);
     }
     if (url.pathname.startsWith("/api/session/")) {
       const id = decodeURIComponent(url.pathname.slice("/api/session/".length));

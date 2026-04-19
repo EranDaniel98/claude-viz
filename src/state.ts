@@ -23,6 +23,9 @@ interface SessionRecord {
   subagents: Map<string, SubagentNode>;
   recentEvents: NormalizedEvent[];
   pendingToolCalls: Map<string, string>; // toolUseId → toolName
+  // FIFO queue of recent Task/Agent prompts. SubagentStart pops the
+  // oldest one and attaches it to the new SubagentNode.brief.
+  pendingTaskPrompts: string[];
   transcriptPath?: string;
   context?: SessionSnapshot["context"];
 }
@@ -94,6 +97,15 @@ export class SessionStateStore {
         if (rv.model) rec.model = rv.model;
         break;
       case "PreToolUse":
+        if (rv.tool_name === "Task" || rv.tool_name === "Agent") {
+          const brief = extractTaskBrief(rv.tool_input);
+          if (brief) {
+            rec.pendingTaskPrompts.push(brief);
+            // Bound the queue. A Task that never spawns a SubagentStart
+            // (failed agent) would otherwise leak.
+            while (rec.pendingTaskPrompts.length > 8) rec.pendingTaskPrompts.shift();
+          }
+        }
         if (rv.tool_use_id && rv.tool_name) {
           rec.pendingToolCalls.set(rv.tool_use_id, rv.tool_name);
           // FIFO bound: Map preserves insertion order, so the first key
@@ -124,6 +136,10 @@ export class SessionStateStore {
           const parentRec = rv.parent_session_id && rv.parent_session_id !== sid
             ? this.ensureSession(rv.parent_session_id, rv.cwd, ts)
             : rec;
+          // FIFO: oldest pending Task prompt belongs to this agent.
+          // Imperfect (no explicit toolUseId↔agentId link in the hook
+          // payload) but reliable in practice for sequential spawns.
+          const brief = parentRec.pendingTaskPrompts.shift();
           parentRec.subagents.set(rv.agent_id, {
             agentId: rv.agent_id,
             agentType: rv.agent_type ?? "unknown",
@@ -131,6 +147,7 @@ export class SessionStateStore {
             startedAt: ts,
             model: rv.model,
             toolCallCount: 0,
+            brief,
           });
           // If parent_session_id differs from this event's session_id, the
           // subagent runs on its own session — record the mapping so later
@@ -243,6 +260,7 @@ export class SessionStateStore {
         subagents: new Map(),
         recentEvents: [],
         pendingToolCalls: new Map(),
+        pendingTaskPrompts: [],
       };
       this.sessions.set(sid, rec);
     }
@@ -272,6 +290,13 @@ function applyScope(scope: SessionScope, rv: RawHookEvent) {
         added: existing.added + added,
         removed: existing.removed + removed,
         reviewed: existing.reviewed,
+        // Keep just the latest edit's old/new — multi-edit paths show the
+        // most recent change. Cap each side so a 1MB rewrite doesn't blow
+        // up the snapshot payload.
+        lastDiff: {
+          oldStr: capDiffSide(oldStr),
+          newStr: capDiffSide(newStr),
+        },
       };
       break;
     }
@@ -326,3 +351,22 @@ export function diffLines(oldStr: string, newStr: string): { added: number; remo
   const lcs = prev[n];
   return { added: n - lcs, removed: m - lcs };
 }
+
+/** Extract a short "brief" string from a Task/Agent tool_input. Honors
+ *  `prompt` first, then `description`. Returns the first line, capped. */
+function extractTaskBrief(input: unknown): string | undefined {
+  if (!input || typeof input !== "object") return undefined;
+  const i = input as Record<string, unknown>;
+  const raw = typeof i.prompt === "string" ? i.prompt
+            : typeof i.description === "string" ? i.description
+            : undefined;
+  if (!raw) return undefined;
+  const firstLine = raw.split("\n")[0].trim();
+  return firstLine.length > 200 ? firstLine.slice(0, 200) + "…" : firstLine;
+}
+
+const DIFF_SIDE_CAP = 4096;
+function capDiffSide(s: string): string {
+  return s.length > DIFF_SIDE_CAP ? s.slice(0, DIFF_SIDE_CAP) + "\n…[truncated]" : s;
+}
+

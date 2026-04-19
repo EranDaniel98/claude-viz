@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { SessionSnapshot, NormalizedEvent } from "../types.js";
 import { mergeFeedEvents, type FeedRow, type ToolRow, type PromptRow, type TurnEndRow, type ExplorationRow } from "../lib/mergeFeed.js";
+import type { ReasoningMap } from "../useReasoning.js";
 
 type Filter = "edits" | "bash" | "reads" | "subagents" | "errors";
 const READ_TOOLS = new Set(["Read", "Grep", "Glob"]);
@@ -23,7 +24,7 @@ function matches(row: FeedRow, active: Set<Filter>): boolean {
   return false;
 }
 
-interface Props { snapshot?: SessionSnapshot }
+interface Props { snapshot?: SessionSnapshot; reasoning?: ReasoningMap }
 
 const toolIcon = (name?: string): string => {
   switch (name) {
@@ -106,7 +107,7 @@ function truncate(s: string): string {
   return s.length > MAX_DETAIL ? s.slice(0, MAX_DETAIL) + "…" : s;
 }
 
-export function LiveActivity({ snapshot }: Props) {
+export function LiveActivity({ snapshot, reasoning }: Props) {
   if (!snapshot) {
     return <div className="empty" aria-label="waiting for events">
       <div className="panel-title">Live Activity</div>
@@ -141,7 +142,7 @@ export function LiveActivity({ snapshot }: Props) {
       </div>
       <ul className="feed" role="log" aria-live="polite">
         {rows.map(({ row, deltaMs }) => (
-          <FeedRowEl key={rowKey(row)} row={row} deltaMs={deltaMs} />
+          <FeedRowEl key={rowKey(row)} row={row} deltaMs={deltaMs} reasoning={reasoning} />
         ))}
       </ul>
     </div>
@@ -183,9 +184,9 @@ function rowKey(row: FeedRow): string {
   }
 }
 
-function FeedRowEl({ row, deltaMs }: { row: FeedRow; deltaMs?: number }) {
+function FeedRowEl({ row, deltaMs, reasoning }: { row: FeedRow; deltaMs?: number; reasoning?: ReasoningMap }) {
   switch (row.kind) {
-    case "tool":        return <ToolRowEl row={row} deltaMs={deltaMs} />;
+    case "tool":        return <ToolRowEl row={row} deltaMs={deltaMs} reasoning={reasoning?.[row.toolUseId]} />;
     case "prompt":      return <PromptRowEl row={row} deltaMs={deltaMs} />;
     case "turn_end":    return <TurnEndRowEl row={row} />;
     case "exploration": return <ExplorationRowEl row={row} deltaMs={deltaMs} />;
@@ -249,24 +250,33 @@ function PromptRowEl({ row, deltaMs }: { row: PromptRow; deltaMs?: number }) {
   );
 }
 
-function ToolRowEl({ row, deltaMs }: { row: ToolRow; deltaMs?: number }) {
+function ToolRowEl({ row, deltaMs, reasoning }: { row: ToolRow; deltaMs?: number; reasoning?: string }) {
   const detail = truncate(detailForTool(row.toolName, row.toolInput));
   const cls = `row${row.isError ? " err banner" : ""}${row.isPending ? " pending" : ""}`;
   const title = `${row.toolName}${detail ? ` · ${detail}` : ""}`;
   return (
-    <li className={cls} title={title}>
-      <DeltaGutter deltaMs={deltaMs} />
-      <span className="ts">{fmtTime(row.startedAt)}</span>
-      <span className="tool" aria-label={row.toolName}>
-        {toolIcon(row.toolName)} {row.toolName}
-      </span>
-      {detail && <span className="detail">{detail}</span>}
-      {row.isPending
-        ? <span className="tag muted" aria-label="in flight">…</span>
-        : <span className="tag muted">{fmtDuration(row.durationMs ?? 0)}</span>}
-      {row.isError && <span className="tag err">error</span>}
-      {row.redactions > 0 && <span className="tag muted">[redacted:{row.redactions}]</span>}
-    </li>
+    <>
+      <li className={cls} title={title}>
+        <DeltaGutter deltaMs={deltaMs} />
+        <span className="ts">{fmtTime(row.startedAt)}</span>
+        <span className="tool" aria-label={row.toolName}>
+          {toolIcon(row.toolName)} {row.toolName}
+        </span>
+        {detail && <span className="detail">{detail}</span>}
+        {row.isPending
+          ? <span className="tag muted" aria-label="in flight">…</span>
+          : <span className="tag muted">{fmtDuration(row.durationMs ?? 0)}</span>}
+        {row.isError && <span className="tag err">error</span>}
+        {row.redactions > 0 && <span className="tag muted">[redacted:{row.redactions}]</span>}
+      </li>
+      {reasoning && (
+        <li className="row reasoning-row" title={reasoning}>
+          <span className="delta" />
+          <span className="ts" />
+          <span className="reasoning-text">💭 {reasoning}</span>
+        </li>
+      )}
+    </>
   );
 }
 

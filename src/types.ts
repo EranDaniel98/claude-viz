@@ -52,8 +52,18 @@ export interface NormalizedEvent {
   redactions: number;        // count of redactions in this event
 }
 
+export interface EditedFileEntry {
+  added: number;
+  removed: number;
+  reviewed: boolean;
+  /** old/new strings of the most recent Edit on this path. Bounded
+   *  to keep memory in check. Bash-driven edits (sed -i etc.) leave
+   *  this undefined since we never see the actual content. */
+  lastDiff?: { oldStr: string; newStr: string };
+}
+
 export interface SessionScope {
-  edited: Record<string, { added: number; removed: number; reviewed: boolean }>;
+  edited: Record<string, EditedFileEntry>;
   created: string[];
   deleted: string[];
   read: string[];
@@ -69,6 +79,9 @@ export interface SubagentNode {
   model?: string;
   currentTool?: string;
   toolCallCount: number;
+  /** First line of the Task/Agent tool_input.prompt that spawned this
+   *  agent. Provides "what was this subagent told to do" context. */
+  brief?: string;
 }
 
 export interface SessionSnapshot {
