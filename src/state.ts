@@ -1,9 +1,15 @@
 import { redactValue } from "./redact.js";
+import { parseBashMutations } from "./bashScope.js";
 import type {
   NormalizedEvent, RawHookEvent, SessionScope, SessionSnapshot, SubagentNode,
 } from "./types.js";
 
 const RECENT_LIMIT = 200;
+/** Sessions inactive for this long are dropped on the next GC sweep. */
+const DEFAULT_SESSION_TTL_MS = 6 * 60 * 60 * 1000;  // 6h
+/** Max in-flight tool calls per session before FIFO eviction kicks in.
+ *  Protects against unbounded growth from Pre events with no Post. */
+const PENDING_TOOL_LIMIT = 256;
 
 interface SessionRecord {
   sessionId: string;
@@ -21,12 +27,22 @@ interface SessionRecord {
   context?: SessionSnapshot["context"];
 }
 
+export interface SessionStateStoreOptions {
+  /** Inactive-session TTL in ms. 0 disables GC. */
+  sessionTtlMs?: number;
+}
+
 export class SessionStateStore {
   private sessions = new Map<string, SessionRecord>();
   // child session_id -> (parent session_id, agent_id) — lets us attribute
   // tool events that fire against a subagent's own session back to the
   // SubagentNode on its parent.
   private childToAgent = new Map<string, { parentSid: string; agentId: string }>();
+  private readonly sessionTtlMs: number;
+
+  constructor(opts: SessionStateStoreOptions = {}) {
+    this.sessionTtlMs = opts.sessionTtlMs ?? DEFAULT_SESSION_TTL_MS;
+  }
 
   // Redacts a hook event, buffers it on its session, and updates tool/scope/subagent state.
   ingest(raw: RawHookEvent, seq: number, ts: number): void {
@@ -80,6 +96,14 @@ export class SessionStateStore {
       case "PreToolUse":
         if (rv.tool_use_id && rv.tool_name) {
           rec.pendingToolCalls.set(rv.tool_use_id, rv.tool_name);
+          // FIFO bound: Map preserves insertion order, so the first key
+          // is the oldest. A subagent that crashes mid-tool would leak
+          // entries forever otherwise.
+          while (rec.pendingToolCalls.size > PENDING_TOOL_LIMIT) {
+            const oldest = rec.pendingToolCalls.keys().next().value;
+            if (oldest === undefined) break;
+            rec.pendingToolCalls.delete(oldest);
+          }
         }
         if (subNode && rv.tool_name) subNode.currentTool = rv.tool_name;
         break;
@@ -179,6 +203,27 @@ export class SessionStateStore {
     if (rec) rec.context = context;
   }
 
+  /** Drop sessions whose last activity is older than `now - sessionTtlMs`.
+   *  Returns the number of sessions dropped. Safe to call frequently. */
+  gcSweep(now: number): number {
+    if (this.sessionTtlMs <= 0) return 0;
+    const cutoff = now - this.sessionTtlMs;
+    let dropped = 0;
+    for (const [sid, rec] of this.sessions) {
+      if (rec.lastEventAt < cutoff) {
+        this.sessions.delete(sid);
+        dropped++;
+      }
+    }
+    // Drop child→agent mappings whose parent or child is gone.
+    for (const [childSid, { parentSid }] of this.childToAgent) {
+      if (!this.sessions.has(childSid) || !this.sessions.has(parentSid)) {
+        this.childToAgent.delete(childSid);
+      }
+    }
+    return dropped;
+  }
+
   allSessionIds(): string[] {
     return Array.from(this.sessions.keys());
   }
@@ -206,17 +251,22 @@ export class SessionStateStore {
 }
 
 function applyScope(scope: SessionScope, rv: RawHookEvent) {
+  if (rv.tool_response?.is_error) return;
   const input = (rv.tool_input ?? {}) as Record<string, unknown>;
+
+  if (rv.tool_name === "Bash") {
+    applyBashScope(scope, input);
+    return;
+  }
+
   const path = typeof input.file_path === "string" ? input.file_path : undefined;
   if (!path) return;
-  if (rv.tool_response?.is_error) return;
 
   switch (rv.tool_name) {
     case "Edit": {
       const oldStr = typeof input.old_string === "string" ? input.old_string : "";
       const newStr = typeof input.new_string === "string" ? input.new_string : "";
-      const added = linesIn(newStr);
-      const removed = linesIn(oldStr);
+      const { added, removed } = diffLines(oldStr, newStr);
       const existing = scope.edited[path] ?? { added: 0, removed: 0, reviewed: false };
       scope.edited[path] = {
         added: existing.added + added,
@@ -237,7 +287,42 @@ function applyScope(scope: SessionScope, rv: RawHookEvent) {
   }
 }
 
-function linesIn(s: string): number {
-  if (!s) return 0;
-  return s.split("\n").length;
+function applyBashScope(scope: SessionScope, input: Record<string, unknown>): void {
+  const cmd = typeof input.command === "string" ? input.command : undefined;
+  if (!cmd) return;
+  const mut = parseBashMutations(cmd);
+  for (const p of mut.created) {
+    if (!scope.created.includes(p)) scope.created.push(p);
+  }
+  for (const p of mut.deleted) {
+    if (!scope.deleted.includes(p)) scope.deleted.push(p);
+  }
+  for (const p of mut.edited) {
+    // Bash edits don't expose line counts; record an entry so the path shows
+    // up in the scope card with (0,0). Better to know the file was touched
+    // than to hide it because we can't measure the delta.
+    if (!scope.edited[p]) scope.edited[p] = { added: 0, removed: 0, reviewed: false };
+  }
+}
+
+// Line-level diff using LCS. Returns the number of lines unique to each side
+// (the `+` and `-` counts a `git diff` would print). Identical strings give
+// `{added: 0, removed: 0}`.
+export function diffLines(oldStr: string, newStr: string): { added: number; removed: number } {
+  if (oldStr === newStr) return { added: 0, removed: 0 };
+  const a = oldStr === "" ? [] : oldStr.split("\n");
+  const b = newStr === "" ? [] : newStr.split("\n");
+  const m = a.length, n = b.length;
+  // Two-row LCS for O(min(m,n)) memory.
+  let prev = new Array(n + 1).fill(0);
+  let curr = new Array(n + 1).fill(0);
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      curr[j] = a[i - 1] === b[j - 1] ? prev[j - 1] + 1 : Math.max(prev[j], curr[j - 1]);
+    }
+    [prev, curr] = [curr, prev];
+    curr.fill(0);
+  }
+  const lcs = prev[n];
+  return { added: n - lcs, removed: m - lcs };
 }

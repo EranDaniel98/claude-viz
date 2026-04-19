@@ -185,3 +185,14 @@ body { margin: 0; background: var(--bg); color: var(--fg); font-family: -apple-s
 .reads-toggle { background: none; border: none; color: var(--muted); font-family: inherit;
                 font-size: inherit; cursor: pointer; padding: 2px 0; }
 .reads-toggle:hover { color: var(--fg); }
+
+/* HealthIndicator */
+.health.warn { background: rgba(245,158,11,0.15); color: var(--warn); }
+.events-file { padding: 3px 8px; border-radius: 10px; font-size: 11px;
+               background: rgba(255,255,255,0.04); color: var(--muted);
+               font-family: ui-monospace, monospace; cursor: help; }
+
+/* SessionPicker */
+.session-picker { background: rgba(255,255,255,0.06); color: var(--fg);
+                  border: 1px solid var(--border); border-radius: 6px;
+                  padding: 3px 8px; font-size: 11px; font-family: ui-monospace, monospace; }

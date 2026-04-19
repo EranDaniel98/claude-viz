@@ -1,7 +1,7 @@
 import { createServer, IncomingMessage, ServerResponse } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { readFile } from "fs/promises";
-import { existsSync } from "fs";
+import { existsSync, statSync } from "fs";
 import { join, resolve, extname } from "path";
 import { randomBytes } from "crypto";
 import { tailJsonl, TailHandle } from "./ingest.js";
@@ -36,6 +36,7 @@ export async function startServer(opts: ServerOptions): Promise<ServerHandle> {
   const token = randomBytes(16).toString("hex");
   const store = new SessionStateStore();
   let seq = 0;
+  let lastEventReceivedAt: number | undefined;  // ms epoch of most recent ingested event
 
   const clients = new Set<WebSocket>();
   const broadcast = (msg: unknown) => {
@@ -47,8 +48,10 @@ export async function startServer(opts: ServerOptions): Promise<ServerHandle> {
   try {
     tail = await tailJsonl(opts.eventsFile, (evt) => {
       seq++;
+      const now = Date.now();
+      lastEventReceivedAt = now;
       const raw = evt as RawHookEvent;
-      store.ingest(raw, seq, Date.now());
+      store.ingest(raw, seq, now);
       broadcast({ type: "event", event: raw, seq });
     });
   } catch {
@@ -59,7 +62,12 @@ export async function startServer(opts: ServerOptions): Promise<ServerHandle> {
   const contextRefreshMs = opts.contextRefreshMs ?? 5000;
   let contextTimer: NodeJS.Timeout | undefined;
   if (contextRefreshMs > 0) {
-    contextTimer = setInterval(() => { refreshAllContexts(store).catch(() => {}); }, contextRefreshMs);
+    contextTimer = setInterval(() => {
+      refreshAllContexts(store).catch(() => {});
+      // GC sweep is cheap (one Map walk); piggyback on the context
+      // refresh tick so we don't need a second timer.
+      store.gcSweep(Date.now());
+    }, contextRefreshMs);
   }
 
   const httpServer = createServer(async (req, res) => {
@@ -74,6 +82,23 @@ export async function startServer(opts: ServerOptions): Promise<ServerHandle> {
     const requiresAuth = url.pathname.startsWith("/api/");
     if (requiresAuth && !checkAuth(req, token)) return send(res, 403, "forbidden");
 
+    if (url.pathname === "/api/health") {
+      let fileExists = false;
+      let lastMtimeMs: number | undefined;
+      try {
+        const st = statSync(opts.eventsFile);
+        fileExists = true;
+        lastMtimeMs = st.mtimeMs;
+      } catch { /* file may not exist yet */ }
+      return sendJson(res, {
+        eventsFile: opts.eventsFile,
+        fileExists,
+        lastMtimeMs,
+        lastEventReceivedAt,
+        eventsSeenCount: seq,
+        sessionCount: store.allSessionIds().length,
+      });
+    }
     if (url.pathname === "/api/sessions") {
       const ids = store.allSessionIds();
       return sendJson(res, { sessions: ids });

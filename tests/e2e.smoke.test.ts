@@ -91,4 +91,19 @@ describe("server e2e", () => {
       await server.close();
     }
   });
+
+  it("exposes /api/health with eventsFile, file existence, and counts", async () => {
+    const server = await startServer({ eventsFile: events });
+    try {
+      const res = await fetch(`${baseUrl(server)}/api/health?k=${server.token}`);
+      expect(res.status).toBe(200);
+      const h = await res.json();
+      expect(h.eventsFile).toBe(events);
+      expect(h.fileExists).toBe(true);
+      expect(typeof h.eventsSeenCount).toBe("number");
+      expect(typeof h.sessionCount).toBe("number");
+    } finally {
+      await server.close();
+    }
+  });
 });
