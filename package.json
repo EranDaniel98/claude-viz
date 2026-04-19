@@ -1,0 +1,47 @@
+{
+  "name": "claude-viz",
+  "version": "0.1.0",
+  "description": "Local web dashboard for Claude Code CLI — subagent observatory + session scope receipt",
+  "type": "module",
+  "bin": {
+    "claude-viz": "bin/claude-viz.js"
+  },
+  "main": "dist/server.js",
+  "scripts": {
+    "build:server": "tsc -p tsconfig.server.json",
+    "build:web": "cd web && vite build",
+    "build": "npm run build:server && npm run build:web",
+    "dev:server": "tsc -p tsconfig.server.json --watch",
+    "dev:web": "cd web && vite",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "scripts/hooks",
+    "web/dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "chokidar": "^3.6.0",
+    "commander": "^12.1.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.4.0",
+    "@testing-library/react": "^16.0.0",
+    "@testing-library/user-event": "^14.5.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@types/ws": "^8.5.12",
+    "jsdom": "^25.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.6.0",
+    "vitest": "^4.1.4"
+  }
+}
