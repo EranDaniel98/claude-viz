@@ -15,6 +15,7 @@ export interface RawHookEvent {
   session_id: string;
   cwd: string;
   parent_session_id?: string;
+  transcript_path?: string;
   // Tool events
   tool_name?: string;
   tool_use_id?: string;
@@ -81,4 +82,10 @@ export interface SessionSnapshot {
   scope: SessionScope;
   subagents: SubagentNode[];
   recentEvents: NormalizedEvent[]; // last N for feed
+  context?: {
+    tokens: number;
+    limit: number;
+    updatedAt: number;
+    burn?: { currentNew: number; median: number; ratio: number };
+  };
 }

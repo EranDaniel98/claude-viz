@@ -24,6 +24,7 @@ export interface NormalizedEvent {
   cwd: string;
   kind: string;
   toolName?: string;
+  toolUseId?: string;
   toolInput?: unknown;
   toolResponse?: { isError?: boolean; content?: unknown };
   prompt?: string;
@@ -44,4 +45,10 @@ export interface SessionSnapshot {
   scope: SessionScope;
   subagents: SubagentNode[];
   recentEvents: NormalizedEvent[];
+  context?: {
+    tokens: number;
+    limit: number;
+    updatedAt: number;
+    burn?: { currentNew: number; median: number; ratio: number };
+  };
 }

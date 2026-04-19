@@ -16,7 +16,16 @@ export function SubagentObservatory({ snapshot }: Props) {
     </div>;
   }
 
-  const running = snapshot.subagents.filter((s) => !s.endedAt).length;
+  const runningNodes = snapshot.subagents.filter((s) => !s.endedAt);
+  const running = runningNodes.length;
+  // "Hot" subagent: the one currently holding a tool call, breaking ties by cumulative tool count.
+  // Only meaningful when 2+ are running; otherwise the badge is redundant.
+  const hotId = running >= 2
+    ? runningNodes
+        .filter((s) => s.currentTool)
+        .sort((a, b) => b.toolCallCount - a.toolCallCount)[0]?.agentId
+    : undefined;
+
   return (
     <div>
       <div className="panel-title headline">
@@ -38,16 +47,18 @@ export function SubagentObservatory({ snapshot }: Props) {
           <div className="parallel-label">├─ {snapshot.subagents.length} parallel subagents</div>
         )}
         <div className="children">
-          {snapshot.subagents.map((s) => <SubagentRow key={s.agentId} node={s} />)}
+          {snapshot.subagents.map((s) => (
+            <SubagentRow key={s.agentId} node={s} hot={s.agentId === hotId} />
+          ))}
         </div>
       </div>
     </div>
   );
 }
 
-function SubagentRow({ node }: { node: SubagentNode }) {
+function SubagentRow({ node, hot }: { node: SubagentNode; hot: boolean }) {
   const running = !node.endedAt;
-  const cls = running ? "node running" : "node done";
+  const cls = `node ${running ? "running" : "done"}${hot ? " hot" : ""}`;
   const meta = [
     `${node.toolCallCount} tool use${node.toolCallCount === 1 ? "" : "s"}`,
     // Tokens come from the session transcript file, not hooks — Phase 2.
@@ -56,7 +67,7 @@ function SubagentRow({ node }: { node: SubagentNode }) {
 
   return (
     <div className={cls} role="treeitem" aria-label={node.agentType}>
-      <span className="glyph" aria-hidden="true">{running ? "🟢" : "✓"}</span>
+      <span className="glyph" aria-hidden="true">{hot ? "★" : running ? "🟢" : "✓"}</span>
       <div className="body">
         <div className="name">
           {node.agentType}

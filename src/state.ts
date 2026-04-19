@@ -17,6 +17,8 @@ interface SessionRecord {
   subagents: Map<string, SubagentNode>;
   recentEvents: NormalizedEvent[];
   pendingToolCalls: Map<string, string>; // toolUseId → toolName
+  transcriptPath?: string;
+  context?: SessionSnapshot["context"];
 }
 
 export class SessionStateStore {
@@ -26,6 +28,7 @@ export class SessionStateStore {
   // SubagentNode on its parent.
   private childToAgent = new Map<string, { parentSid: string; agentId: string }>();
 
+  // Redacts a hook event, buffers it on its session, and updates tool/scope/subagent state.
   ingest(raw: RawHookEvent, seq: number, ts: number): void {
     if (!raw.session_id) return;
 
@@ -38,6 +41,7 @@ export class SessionStateStore {
     const rec = this.ensureSession(sid, rv.cwd, ts);
     rec.lastEventAt = ts;
     rec.redactions += redactions;
+    if (rv.transcript_path && !rec.transcriptPath) rec.transcriptPath = rv.transcript_path;
 
     const norm: NormalizedEvent = {
       seq, ts,
@@ -155,13 +159,31 @@ export class SessionStateStore {
       },
       subagents: Array.from(rec.subagents.values()),
       recentEvents: [...rec.recentEvents],
+      context: rec.context ? { ...rec.context } : undefined,
     };
+  }
+
+  /** Get a session's transcript path (for the context reader). */
+  transcriptPathFor(sessionId: string): string | undefined {
+    return this.sessions.get(sessionId)?.transcriptPath;
+  }
+
+  /** Get the session's model (for context-limit resolution). */
+  modelFor(sessionId: string): string | undefined {
+    return this.sessions.get(sessionId)?.model;
+  }
+
+  /** Update the context-window occupancy for a session. */
+  setContext(sessionId: string, context: SessionSnapshot["context"]): void {
+    const rec = this.sessions.get(sessionId);
+    if (rec) rec.context = context;
   }
 
   allSessionIds(): string[] {
     return Array.from(this.sessions.keys());
   }
 
+  /** Returns the SessionRecord for `sid`, creating and storing a fresh one if none exists. */
   private ensureSession(sid: string, cwd: string, ts: number): SessionRecord {
     let rec = this.sessions.get(sid);
     if (!rec) {

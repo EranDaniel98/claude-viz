@@ -7,11 +7,13 @@ import { randomBytes } from "crypto";
 import { tailJsonl, TailHandle } from "./ingest.js";
 import { SessionStateStore } from "./state.js";
 import type { RawHookEvent } from "./types.js";
+import { readAllUsages, contextTokens, contextLimitFor, detectBurn } from "./transcript.js";
 
 export interface ServerOptions {
   eventsFile: string;
   port?: number;                 // 0 = OS assigns
   webDir?: string;               // absolute path to built web/dist
+  contextRefreshMs?: number;     // transcript re-read interval; 0 disables
 }
 
 export interface ServerHandle {
@@ -51,6 +53,13 @@ export async function startServer(opts: ServerOptions): Promise<ServerHandle> {
     });
   } catch {
     // File may not exist yet; that's OK — hooks will create it.
+  }
+
+  // Periodic context-window refresh. Reads transcript usage and updates state.
+  const contextRefreshMs = opts.contextRefreshMs ?? 5000;
+  let contextTimer: NodeJS.Timeout | undefined;
+  if (contextRefreshMs > 0) {
+    contextTimer = setInterval(() => { refreshAllContexts(store).catch(() => {}); }, contextRefreshMs);
   }
 
   const httpServer = createServer(async (req, res) => {
@@ -118,11 +127,32 @@ export async function startServer(opts: ServerOptions): Promise<ServerHandle> {
   return {
     url, token,
     async close() {
+      if (contextTimer) clearInterval(contextTimer);
       await tail?.close();
       wss.close();
       await new Promise<void>((r) => httpServer.close(() => r()));
     },
   };
+}
+
+async function refreshAllContexts(store: SessionStateStore): Promise<void> {
+  for (const sid of store.allSessionIds()) {
+    const p = store.transcriptPathFor(sid);
+    if (!p) continue;
+    const usages = await readAllUsages(p);
+    if (usages.length === 0) continue;
+    const latest = usages[usages.length - 1];
+    const model = store.modelFor(sid) ?? latest.model;
+    const burn = detectBurn(usages);
+    store.setContext(sid, {
+      tokens: contextTokens(latest),
+      limit: contextLimitFor(model),
+      updatedAt: Date.now(),
+      burn: burn?.isBurning
+        ? { currentNew: burn.currentNew, median: burn.median, ratio: burn.ratio }
+        : undefined,
+    });
+  }
 }
 
 function checkAuth(req: IncomingMessage, token: string): boolean {
